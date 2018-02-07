@@ -1,0 +1,8 @@
+{
+    "event": "upcomingLaunches",
+    "url": "https://api.spacexdata.com/v2/launches/upcoming",
+    "requestType": "GET",
+    "headers": {},
+    "responseTemplate": "{{0.launch_date_unix}}",
+    "mydevices": true
+}
