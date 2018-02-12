@@ -3,6 +3,6 @@
     "url": "https://api.spacexdata.com/v2/launches/upcoming",
     "requestType": "GET",
     "headers": {},
-    "responseTemplate": "{{0.launch_date_unix}}",
+    "responseTemplate": "{{0.launch_date_unix}}{{#0.rocket.second_stage.payloads}} & {{payload_id}}{{/0.rocket.second_stage.payloads}}",
     "mydevices": true
 }
