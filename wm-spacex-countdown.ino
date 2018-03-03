@@ -21,6 +21,7 @@ struct rect_t {
 
 // UNIX timestamp of next launch
 int nextLaunchTimestamp;
+bool timestampUnknown;
 // webhook response will be put here as we get data
 // stringstream partialResponse;
 bool receivingData = false;
@@ -39,6 +40,8 @@ timespan_t untilNextLaunch;
 bool hasWifi = true, refreshing = false, refreshingChanged = false;
 
 uint16_t progressCounter = 0;
+
+unsigned long lastMillis = 0;
 
 Adafruit_HX8357 tft = Adafruit_HX8357(D6, D7, D5, D3, -1, D4);
 
@@ -154,20 +157,23 @@ void setup() {
 }
 
 void loop() {
-    unsigned long startTime = micros();
+    unsigned long nowMillis = millis();
     // wait 60 seconds between api hits
-    if (loopCounter >= 60) {
+    if (nowMillis % 60000 < lastMillis % 60000) {
         requestData();
-        loopCounter = 0;
     }
 
-    --untilNextLaunch;
-    displayCountdown();
-    iterProgress();
-
-    loopCounter++;
-    // 1 second between loops, accounting for time it took to run loop
-    delayMicroseconds(1000000 - (micros() - startTime));
+    if (nowMillis % 1000 < lastMillis % 1000) {
+        --untilNextLaunch;
+        displayCountdown();
+    }
+    if (refreshingChanged) {
+        refreshingChanged = false;
+        if (refreshing) startProgress();
+        else stopProgress();
+    }
+    if (refreshing && nowMillis % 25 < lastMillis % 25) iterProgress();
+    lastMillis = nowMillis;
 }
 
 void requestData() {
@@ -182,7 +188,11 @@ void gotLaunchData(const char* name, const char* data) {
     refreshingChanged = true;
     Serial.println("received launch data");
     Serial.println(data);
-    nextLaunchTimestamp = atoi(data);
+    if (strncmp(data, " &", 2) == 0) timestampUnknown = true;
+    else {
+        timestampUnknown = false;
+        nextLaunchTimestamp = atoi(data);
+    }
     // data will look like:
     // 1518468199 & Paz & Microsat-2a, -2b
     // \________/   \____________________/
@@ -202,7 +212,8 @@ void gotLaunchData(const char* name, const char* data) {
 
 void displayCountdown() {
     strcpy(oldCountdownText, countdownText);
-    sprintf(countdownText, "T-%02d:%02d:%02d:%02d", untilNextLaunch.days, untilNextLaunch.hours, untilNextLaunch.minutes, untilNextLaunch.seconds);
+    if (timestampUnknown) strcpy(countdownText, "Unknown       ");
+    else sprintf(countdownText, "T-%02d:%02d:%02d:%02d", untilNextLaunch.days, untilNextLaunch.hours, untilNextLaunch.minutes, untilNextLaunch.seconds);
     Serial.println(countdownText);
     fastDrawCountdown();
 }
@@ -238,9 +249,9 @@ void fastDrawCountdown() {
     // if (hasWifi != WiFi.ready()) {
     //     tft.drawBitmap(SCREEN_WIDTH - ICON_SIZE, ICON_Y, noWifiIcon, ICON_SIZE, ICON_SIZE, hasWifi ? HX8357_BLACK : ICON_COLOR);
     // }
-    if (refreshingChanged) {
-        tft.drawBitmap(SCREEN_WIDTH - ICON_SIZE, ICON_Y, refreshingIcon, ICON_SIZE, ICON_SIZE, refreshing ? ICON_COLOR : HX8357_BLACK);
-    }
+    // if (refreshingChanged) {
+    //     tft.drawBitmap(SCREEN_WIDTH - ICON_SIZE, ICON_Y, refreshingIcon, ICON_SIZE, ICON_SIZE, refreshing ? ICON_COLOR : HX8357_BLACK);
+    // }
     if (!payloadsChanged) return;
     // not as optimized as it could be but I'm lazy
     tft.fillRect(CURSOR_X, PAYLOADS_Y, SCREEN_WIDTH - CURSOR_X, CHAR_HEIGHT * PAYLOADS_SIZE, HX8357_BLACK);
@@ -263,11 +274,23 @@ void startProgress() {
 }
 
 void iterProgress() {
-    progressCounter++;
+    progressCounter += 2;
     if (progressCounter >= 120) progressCounter = 0;
+    // add pixels to the right
     for (int row = 0; row < PROGRESS_HEIGHT; row++) {
         int y = (SCREEN_HEIGHT - PROGRESS_HEIGHT) + row;
-        for (int x = (progressCounter + 89 - row); x < SCREEN_WIDTH; x += 120) tft.drawPixel(x, y, PROGRESS_COLOR);
+        for (int x = (progressCounter - 31 - row); x < SCREEN_WIDTH; x += 120) {
+            tft.drawPixel(x - 1, y, PROGRESS_COLOR);
+            tft.drawPixel(x, y, PROGRESS_COLOR);
+        }
+    }
+    // remove pixels from the left
+    for (int row = 0; row < PROGRESS_HEIGHT; row++) {
+        int y = (SCREEN_HEIGHT - PROGRESS_HEIGHT) + row;
+        for (int x = (progressCounter - row - 1); x < SCREEN_WIDTH; x += 120) {
+            tft.drawPixel(x - 1, y, HX8357_BLACK);
+            tft.drawPixel(x, y, HX8357_BLACK);
+        }
     }
 }
 
